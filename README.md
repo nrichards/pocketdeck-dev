@@ -18,9 +18,9 @@ See each directory's README for setup.
 
 # Acknowledgements
 
-This project is _not_ endorsed by Nunomo, Inc. 
+This project is _not_ endorsed by Nunomo, Inc. Pocket Deck is copyright Nunomo, Inc.
 
-- This is an independent simulator for the Pocket Deck device. The official firmware and Python API live at raspy135/pocketdeck and are licensed BSD-3-Clause; this project does not include or distribute their code.
+- This is an independent simulator for the public Pocket Deck python API. The official firmware and Python API live at raspy135/pocketdeck and are licensed BSD-3-Clause; this project does not include or distribute their code.
 
 This shim targets the API declared here:
 
