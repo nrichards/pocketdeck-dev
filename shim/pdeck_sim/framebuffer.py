@@ -81,6 +81,24 @@ class Framebuffer:
             cls._instance = Framebuffer()
         return cls._instance
 
+    def reset_for_testing(self) -> None:
+        """Reset all mutable state to defaults. For use by test fixtures —
+        the framebuffer is a process-wide singleton, so without an explicit
+        reset, state from one test leaks into the next.
+
+        Does not recreate the pygame window (that would require re-entering
+        pygame.init and breaks on macOS when called off-main-thread). Only
+        resets data we can touch safely.
+        """
+        for b in self.buffers:
+            b.fill(0)
+        self.active_buffer = 0
+        self.key_state.clear()
+        self.input_queue.clear()
+        self.flags.invert = False
+        self.flags.quit_requested = False
+        self.flags.detach_requested = False
+
     # --- presentation ---
 
     def present(self) -> None:

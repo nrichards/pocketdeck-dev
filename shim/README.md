@@ -39,6 +39,22 @@ Pocket Deck apps unmodified on your Mac; a pygame window stands in for the
   shortcuts but there's no concurrent background-thread rendering like the
   real deck does.
 
+## Future
+
+- Add frame-buffer clearing logic.
+  - The real Pocket Deck auto-clears its screen between each frame when it detects the new frame is being drawn to. It also has an optimization to idle and bypass this clearing when no drawing is detected, saving on battery. 
+  - This shim does not auto-clear.
+  - So we need to add a flag on the framebuffer (auto_clear_buffer_0 = True) that clears at the top of each main-loop iteration. This flag would be set on all the draw primitives. 
+  - To workaround, in your apps clear the buffer before the first `draw_*` call of each frame, or e.g. add this line to your top level `update()` call:
+```python
+  self.v.clear_buffer()   # ← ADD THIS LINE, CALLED ONCE PER FRAME, AT START
+```
+- Add multiple screens.
+  - The real Pocket Deck supports 10 virtual screens. Switching is performed via a keyboard command. Each screen is backed by a thread, it is assumed.
+  - This shim supports one screen.
+  - So comprehensive support is needed for multiple screens.
+
+
 ## Install
 
 ```bash
@@ -84,3 +100,26 @@ The runner takes a path to a `.py` file that defines `main(vs, args)`. It:
 
 If your app imports sibling modules (e.g. `import overlay`), as long as they
 sit in the same directory they'll resolve.
+
+# Tests
+
+Basic tests are included -- headless,  platform independent. See [tests/](tests).
+
+Add more as features are changed or introduced. 
+
+## Set up and running
+Ensure requirements for testing:
+
+```python
+pip install pytest
+```
+
+Execute tests for each significant change:
+
+```python
+SDL_VIDEODRIVER=dummy pytest
+# or with output
+SDL_VIDEODRIVER=dummy pytest -v
+# or a single test
+SDL_VIDEODRIVER=dummy pytest -v -k reimport
+```

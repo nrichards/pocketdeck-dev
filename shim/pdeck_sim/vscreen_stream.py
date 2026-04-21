@@ -47,22 +47,24 @@ class VscreenStream:
     def read(self, n: int = 1, poll_ms: int = 50) -> bytes:
         """Block up to `poll_ms` at a time waiting for up to n bytes.
 
-        On the real deck this loops until interrupted. In the shim we cap
-        the total wait at 1 hour to avoid hanging a test run forever. Apps
-        that truly want indefinite blocking will still feel the same.
+        Thread-safety note: this method runs on the worker thread (the one
+        executing the user's main()). It must NOT call into pygame/SDL —
+        on macOS, Cocoa throws NSInternalInconsistencyException if AppKit
+        functions are called from any thread other than the main thread,
+        and SDL's event pump calls straight into AppKit. The main thread
+        is already pumping events at ~60fps and populating the input queue
+        and quit flag; all we do here is observe that shared state.
         """
         deadline = time.time() + 3600
         poll_s = max(0.001, poll_ms / 1000.0)
         while time.time() < deadline:
             # Pump events so the window stays responsive and input arrives.
-            self._fb.pump_events()
             if self._fb.flags.quit_requested:
                 return b""
             got, data = self.v.read_nb(n)
             if got > 0:
                 return data
             # Present frame and sleep one poll interval.
-            self.v.fb.present()
             time.sleep(poll_s)
         return b""
 

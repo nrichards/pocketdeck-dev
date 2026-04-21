@@ -26,7 +26,16 @@ def make_pdeck_utils() -> types.ModuleType:
     mod.autosleep = 0
 
     def reimport(module_name: str):
-        """Force-reload a module. Equivalent to real pdeck_utils.reimport."""
+        """Force-reload a module from source. Equivalent to the real
+        pdeck_utils.reimport on device.
+        invalidate_caches() is required: Python caches the "finders" that
+        map module names to source paths, and without this call, a brand-
+        new module file on sys.path might not be picked up until the next
+        process start. Also handles the case where a module was written,
+        imported, then rewritten — without the invalidate, the importer
+        may hand back the previously-loaded code.
+        """
+        importlib.invalidate_caches()
         if module_name in sys.modules:
             del sys.modules[module_name]
         return importlib.import_module(module_name)
