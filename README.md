@@ -2,7 +2,7 @@
 
 Two independent tools for iteration on Pocket Deck apps from a Mac. Not distraction free, use the Deck for mental space.
 
-- **`shim/`** — a drop-in `pdeck` / `vscreen` module for desktop CPython. Develop limited (see Limitations in shim/README.md) Pocket Deck apps on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Sketch ideas on desktop(\*\*) for layout work and debugging. 
+- **`shim/`** — a drop-in `pdeck` / `vscreen` module for desktop CPython. Develop [limited](shim/README.md#whats-not-covered) Pocket Deck apps on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Sketch ideas on desktop(\*\*) for layout work and debugging. 
   - _(\*) May also work under Linux._ 
   - _(\*\*) May not be perfect, especially timing, plus drawing fonts and ovals._
 
