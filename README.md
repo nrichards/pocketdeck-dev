@@ -28,4 +28,4 @@ This shim targets the API declared here:
 
 This project was generated heavily by AI:
 
-- Claude Opus 4.7, based upon [Pocket Deck API](github.com/raspy135/pocketdeck) on April 20 2026
+- Claude Opus 4.7, based upon [Pocket Deck API](https://github.com/raspy135/pocketdeck) on April 20 2026
