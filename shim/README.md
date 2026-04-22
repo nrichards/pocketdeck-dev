@@ -1,6 +1,6 @@
 # pdeck-sim
 
-A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Run Pocket Deck apps unmodified on your Mac; a pygame window stands in for the 400×240 monochrome LCD. Headless tests are included.
+A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop limited Pocket Deck apps on your Mac; a pygame window stands in for the 400×240 monochrome LCD. Headless tests are included.
 
 ## What's covered
 
@@ -33,11 +33,6 @@ A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Run Poc
 ```python
   self.v.clear_buffer()   # ← ADD THIS LINE, CALLED ONCE PER FRAME, AT START
 ```
-- Add multiple screens.
-  - The real Pocket Deck supports 10 virtual screens. Switching is performed via a keyboard command. Each screen is backed by a thread, it is assumed.
-  - This shim supports one screen.
-  - So comprehensive support is needed for multiple screens.
-
 
 ## Install
 
@@ -118,7 +113,7 @@ If your app imports sibling modules (e.g. `import overlay`), as long as they sit
 
 Basic tests are included -- headless,  platform independent. See [tests/](tests).
 
-Add tests as features are changed or introduced, or you'll be sorry!
+Add tests as features are changed or introduced, or be sorry!
 
 ## Set up and running
 Ensure requirements for testing:

@@ -1,15 +1,15 @@
 # Pocket Deck dev kit
 
-Two independent tools for faster iteration on Pocket Deck apps from a Mac.
+Two independent tools for iteration on Pocket Deck apps from a Mac. Not distraction free, use the Deck for mental space.
 
-- **`shim/`** — a drop-in `pdeck` / `vscreen` module for desktop CPython. Run Pocket Deck apps unmodified on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Faster to iterate than the device, perfect(\*\*) for layout work and debugging. 
+- **`shim/`** — a drop-in `pdeck` / `vscreen` module for desktop CPython. Develop [limited](shim/README.md#whats-not-covered) Pocket Deck apps on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Sketch ideas on desktop(\*\*) for layout work and debugging. 
   - _(\*) May also work under Linux._ 
   - _(\*\*) May not be perfect, especially timing, plus drawing fonts and ovals._
 
 
-- **__[UNTESTED]__** **`sync/`** — file watcher that SCPs changed `.py` files to the deck and triggers `r <module>` over SSH. Pure Bash + `fswatch`. No simulation, real device. Tightest "edit and see it run" loop short of typing on the deck. **__[UNTESTED]__**
+- **__[UNTESTED]__** **`sync/`** — file watcher that SCPs changed `.py` files to the deck and triggers `r <module>` over SSH. Pure Bash + `fswatch`. No simulation, real device. An "edit, push, and see it run" on the deck tool. **__[UNTESTED]__**
 
-The two are complementary. Do layout and logic in the shim, then push to the device with the sync script to verify.
+The two are complementary. Do layout and logic in the shim, then push to the device with the sync script to play.
 
 See each directory's README for setup.
 
@@ -18,9 +18,9 @@ See each directory's README for setup.
 
 # Acknowledgements
 
-This project is _not_ endorsed by Nunomo, Inc. 
+This project is _not_ endorsed by Nunomo, Inc. Pocket Deck is copyright Nunomo, Inc.
 
-- This is an independent simulator for the Pocket Deck device. The official firmware and Python API live at raspy135/pocketdeck and are licensed BSD-3-Clause; this project does not include or distribute their code.
+- This is an independent simulator for the public Pocket Deck python API. The official firmware and Python API live at raspy135/pocketdeck and are licensed BSD-3-Clause; this project does not include or distribute their code.
 
 This shim targets the API declared here:
 
@@ -28,4 +28,4 @@ This shim targets the API declared here:
 
 This project was generated heavily by AI:
 
-- Claude Opus 4.7, based upon [Pocket Deck API](github.com/raspy135/pocketdeck) on April 20 2026
+- Claude Opus 4.7, based upon [Pocket Deck API](https://github.com/raspy135/pocketdeck) on April 20 2026
