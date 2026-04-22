@@ -131,19 +131,31 @@ def main(argv=None) -> int:
     # pump_events() on F5. Initialize here so hasattr is fine either way.
     fb.flags.reload_requested = False  # type: ignore[attr-defined]
 
+    # Initial present so the window shows the off-white background instead
+    # of whatever pygame defaults to. Apps without a callback (e.g. pure
+    # terminal apps) will see this blank screen the whole time.
+    fb.present()
+
     try:
         while not fb.flags.quit_requested:
             t0 = time.time()
             fb.pump_events()
 
             # If the app registered a frame callback, call it.
+            # _begin_frame() arms the lazy-clear; a draw inside the callback
+            # will clear buffer 0 before drawing. If the callback returns
+            # without drawing, _drew_this_frame stays False and we skip
+            # presenting — mirrors the deck's skip-update energy optimization.
+            drew = False
             if v._callback is not None:
+                v._begin_frame()
                 try:
                     v._callback(False)
                 except Exception:
                     sys.stderr.write("\n[pdeck_sim] callback raised:\n")
                     traceback.print_exc()
                     v._callback = None
+                drew = v._drew_this_frame
 
             # Detach: C-S-D, mirrors real deck
             if fb.flags.detach_requested:
@@ -160,7 +172,12 @@ def main(argv=None) -> int:
                 fb.flags.quit_requested = True
                 break
 
-            fb.present()
+            # Present only if something changed. This is the skip-update
+            # optimization: callback-less frames, or callbacks that return
+            # without drawing, don't push pixels to the window.
+            if drew or fb.flags.needs_repaint:
+                fb.present()
+                fb.flags.needs_repaint = False
 
             elapsed = time.time() - t0
             if elapsed < frame_time:

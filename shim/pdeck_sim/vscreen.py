@@ -66,27 +66,61 @@ class Vscreen:
     def callback_exists(self) -> bool:
         return self._callback is not None
 
+    def _begin_frame(self) -> None:
+        """Called by the runner before invoking the frame callback.
+
+        Mirrors the deck's behavior: buffer 0 is logically "about to be
+        cleared" but we defer the actual clear until the first draw call
+        arrives via _mark(). This lets us implement the skip-update
+        optimization: if the callback calls finished() without any draws,
+        no clear and no present happens — the LCD holds its last frame.
+        """
+        self._drew_this_frame = False
+
     def finished(self) -> None:
-        """App tells us it's done drawing this frame. Present and flip."""
-        # On real deck, calling finished() without any draw saves energy. In
-        # the shim we always present so the window stays responsive, but we
-        # skip the scale/blit if nothing changed.
-        if self._drew_this_frame:
-            self.fb.present()
-            self._drew_this_frame = False
-        else:
-            # Still need to flip so the window redraws; cheap.
-            self.fb.present()
+        """App tells us it's done drawing this frame.
+
+        On device, finished() without preceding draws means "nothing
+        changed, don't update the screen." The shim mirrors that: the
+        runner checks _drew_this_frame after the callback returns and
+        skips present() if nothing was drawn.
+
+        We don't present here — presentation is driven from the runner's
+        main loop, which is the only thread allowed to touch SDL on
+        macOS anyway.
+        """
+        # Intentionally empty. Kept as a method because user apps call it
+        # and because future hooks (e.g. frame-time metrics) belong here.
+        return
 
     # -----------------------------------------------------------------------
     # Internal drawing helpers
     # -----------------------------------------------------------------------
 
     def _buf(self) -> pygame.Surface:
+        """Return the current draw buffer, performing lazy-clear of buffer 0
+        on the first access of each frame.
+
+        This is where the deck's "buffer 0 is auto-cleared each frame"
+        behavior is implemented. Deferring the clear until a draw primitive
+        actually needs the buffer lets us also implement the skip-update
+        optimization: if a callback calls finished() without drawing, _buf()
+        is never called, no clear happens, no present happens.
+        """
+        if self.fb.active_buffer == 0 and not self._drew_this_frame:
+            self.fb.buffers[0].fill(0)
+        self._drew_this_frame = True
         return self.fb.buffers[self.fb.active_buffer]
 
     def _mark(self) -> None:
-        self._drew_this_frame = True
+        """Legacy no-op retained for compatibility with existing call sites.
+
+        Lazy-clear and drew-tracking happen in _buf() now, which is reached
+        by every draw primitive. Keeping _mark() as a no-op means the many
+        draw primitives that end with `self._mark()` don't need individual
+        edits; they just call a harmless method.
+        """
+        pass
 
     def _pixel(self, x: int, y: int) -> None:
         if not (0 <= x < SCREEN_W and 0 <= y < SCREEN_H):

@@ -58,13 +58,11 @@ class VscreenStream:
         deadline = time.time() + 3600
         poll_s = max(0.001, poll_ms / 1000.0)
         while time.time() < deadline:
-            # Pump events so the window stays responsive and input arrives.
             if self._fb.flags.quit_requested:
                 return b""
             got, data = self.v.read_nb(n)
             if got > 0:
                 return data
-            # Present frame and sleep one poll interval.
             time.sleep(poll_s)
         return b""
 

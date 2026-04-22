@@ -25,15 +25,6 @@ A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop
 
 ## Future
 
-- Add frame-buffer clearing logic.
-  - The real Pocket Deck auto-clears its screen between each frame when it detects the new frame is being drawn to. It also has an optimization to idle and bypass this clearing when no drawing is detected, saving on battery. 
-  - This shim does not auto-clear.
-  - So we need to add a flag on the framebuffer (auto_clear_buffer_0 = True) that clears at the top of each main-loop iteration. This flag would be set on all the draw primitives. 
-  - To workaround, in your apps clear the buffer before the first `draw_*` call of each frame, or e.g. add this line to your top level `update()` call:
-```python
-  self.v.clear_buffer()   # ← ADD THIS LINE, CALLED ONCE PER FRAME, AT START
-```
-
 ## Install
 
 ```bash
@@ -54,6 +45,12 @@ Or with args:
 
 ```bash
 python3 -m pdeck_sim.runner ~/code/pocketdeck-apps/my_app.py foo bar
+```
+
+Define a virtual filesystem (see [discussion](#deck-filesystem-root) on sandbox escape safety, and symlink usage), then specify a root for assets needed by the app:
+
+```bash
+POCKETDECK_ROOT=../../sd-root python3 -m pdeck_sim.runner ~/code/pocketdeck-apps/my_app.py foo bar
 ```
 
 ## Deck filesystem root
@@ -87,6 +84,23 @@ scp -r user@<deck-ip>:/sd/lib/data ~/.pocketdeck-root/sd/lib/
 If an app references a `/sd/...` path that doesn't exist under the root,
 the shim prints a warning and returns an empty image rather than crashing —
 so you can see which assets are missing at a glance.
+
+**Sandbox enforcement.** Two layers:
+
+1. `..` traversal is blocked unconditionally. An app that asks for
+   `/sd/../../../etc/passwd` raises `SandboxEscapeError` before any file
+   operation runs. This is the defense against app-generated path tricks.
+
+2. Symlink escape is permitted by default. If `$POCKETDECK_ROOT/sd/lib`
+   is a symlink pointing at your real deck repo (a common setup), apps
+   can read through it normally. Set `POCKETDECK_ALLOW_SYMLINK_ESCAPE=0`
+   to opt into strict mode — any resolved path landing outside the root
+   will then be rejected. Strict mode is useful if you're running
+   untrusted app code and you haven't set up any intentional symlinks.
+
+Untranslated paths (host absolutes like `/tmp/foo`, relative paths) pass
+through unchanged in both modes — the shim only sandboxes what it
+translates.
 
 ## Runtime controls
 

@@ -37,6 +37,10 @@ class RuntimeFlags:
     scale: int = DEFAULT_SCALE
     quit_requested: bool = False
     detach_requested: bool = False  # C-S-D equivalent
+    # Set when something outside the drawing pipeline has changed
+    # what the window should show (invert toggle, scale change, reload).
+    # The runner consumes and clears this after presenting.
+    needs_repaint: bool = False
 
 
 class Framebuffer:
@@ -98,6 +102,7 @@ class Framebuffer:
         self.flags.invert = False
         self.flags.quit_requested = False
         self.flags.detach_requested = False
+        self.flags.needs_repaint = False
 
     # --- presentation ---
 
@@ -152,9 +157,11 @@ class Framebuffer:
             return
         if event.key == pygame.K_F6:
             self.flags.invert = not self.flags.invert
+            self.flags.needs_repaint = True
             return
         if event.key == pygame.K_F11:
             self.resize_window(1 if self.flags.scale == 2 else 2)
+            self.flags.needs_repaint = True
             return
         if ctrl and shift and event.key == pygame.K_d:
             self.flags.detach_requested = True
