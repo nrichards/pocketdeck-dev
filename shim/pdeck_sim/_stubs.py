@@ -28,6 +28,7 @@ def make_pdeck_utils() -> types.ModuleType:
     def reimport(module_name: str):
         """Force-reload a module from source. Equivalent to the real
         pdeck_utils.reimport on device.
+
         invalidate_caches() is required: Python caches the "finders" that
         map module names to source paths, and without this call, a brand-
         new module file on sys.path might not be picked up until the next
@@ -89,13 +90,31 @@ def make_xbmreader() -> types.ModuleType:
     mod = types.ModuleType("xbmreader")
 
     def read(path: str) -> tuple:
-        """Parse a .xbm file. Returns (name, width, height, bytes, 1)."""
-        text = Path(path).read_text()
+        """Parse a .xbm file. Returns (name, width, height, bytes, 1).
+
+        Deck paths like /sd/lib/data/ghost1.xbm are rewritten to the host
+        filesystem via pdeck_sim.paths.translate().
+        """
+        from .paths import translate
+        host_path = translate(path)
+        # Preserve the original basename as the XBM's `name` field — apps
+        # don't expect to see the translated host path reflected back.
+        name = Path(path).stem
+        try:
+            text = Path(host_path).read_text()
+        except FileNotFoundError:
+            import warnings
+            warnings.warn(
+                f"[pdeck_sim] XBM not found: {path} -> {host_path}. "
+                f"Set POCKETDECK_ROOT or populate ~/.pocketdeck-root/. "
+                f"Returning empty image.",
+                stacklevel=2,
+            )
+            return (name, 0, 0, b"", 1)
         # XBM looks like:
         #   #define foo_width 16
         #   #define foo_height 16
         #   static char foo_bits[] = { 0x00, 0x01, ... };
-        name = Path(path).stem
         width = height = 0
         for line in text.splitlines():
             line = line.strip()

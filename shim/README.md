@@ -61,6 +61,38 @@ Or with args:
 python3 -m pdeck_sim.runner ~/code/pocketdeck-apps/my_app.py foo bar
 ```
 
+## Deck filesystem root
+
+Deck apps reference absolute paths like `/sd/lib/data/ghost1.xbm` or
+`/config/apps.json`. Those paths don't exist on macOS. The shim rewrites
+them to live under a single host directory:
+
+- Default: `~/.pocketdeck-root/`
+- Override: set the `POCKETDECK_ROOT` env var
+
+Mirror the deck's layout inside that root:
+
+```
+$POCKETDECK_ROOT/
+  sd/
+    lib/data/ghost1.xbm       <- resolves /sd/lib/data/ghost1.xbm
+    py/my_app.py
+    Documents/
+  config/
+    apps.json
+```
+
+The simplest way to populate it is to SCP a subtree off your deck:
+
+```bash
+mkdir -p ~/.pocketdeck-root/sd/lib
+scp -r user@<deck-ip>:/sd/lib/data ~/.pocketdeck-root/sd/lib/
+```
+
+If an app references a `/sd/...` path that doesn't exist under the root,
+the shim prints a warning and returns an empty image rather than crashing —
+so you can see which assets are missing at a glance.
+
 ## Runtime controls
 
 Inside the pygame window:

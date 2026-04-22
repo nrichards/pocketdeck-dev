@@ -106,7 +106,13 @@ def main(argv=None) -> int:
     v = pdeck.vscreen(ns.screen)
     vs = VscreenStream(v)
 
+    # Print the startup banner including where the virtual deck filesystem
+    # is rooted. Users need to know this so they can drop /sd/... content
+    # into the right place.
+    from .paths import get_root
+    deck_root = get_root()
     print(f"[pdeck_sim] loading {app_path.name} on screen {ns.screen}")
+    print(f"[pdeck_sim] deck filesystem root: {deck_root}")
     try:
         user_module = _load_user_module(app_path)
     except Exception:
