@@ -1,6 +1,6 @@
 # Pocket Deck dev kit
 
-Two independent tools for iteration on Pocket Deck apps from a Mac. Not distraction free, use the Deck for mental space.
+Two independent tools for iteration on Pocket Deck apps from a Mac: Simulator "shim", and Device-Uploader "sync". Not distraction free, use the Deck for mental space.
 
 - [**`shim/`**](shim) — a drop-in `pdeck` / `vscreen` module for desktop CPython. Develop [limited](shim/README.md#whats-not-covered) Pocket Deck apps on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Sketch ideas on desktop(\*\*) for layout work and debugging. 
   - _(\*) May also work under Linux._ 
