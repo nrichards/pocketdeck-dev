@@ -5,6 +5,8 @@ Two independent tools for iteration on Pocket Deck apps from a Mac: Simulator "s
 - [**`shim/`**](shim) — a drop-in `pdeck` / `vscreen` module for desktop CPython. Develop [limited](shim/README.md#whats-not-covered) Pocket Deck apps on your Mac(\*) with a pygame window standing in for the 400×240 monochrome LCD. Sketch ideas on desktop(\*\*) for layout work and debugging. 
   - _(\*) May also work under Linux._ 
   - _(\*\*) May not be perfect, especially timing, plus drawing fonts and ovals._
+  - Without [debug panel](shim/README.md#debug-panel). ![Without debug panel enabled](preview.png)
+  - With [debug panel](shim/README.md#debug-panel) enabled, _default_. ![With debug panel enabled, default, is wider](panel_preview.png)
 
 
 - **__[UNTESTED]__** [**`sync/`**](sync) — file watcher that SCPs changed `.py` files to the deck and triggers `r <module>` over SSH. Pure Bash + `fswatch`. No simulation, real device. An "edit, push, and see it run" on the deck tool. **__[UNTESTED]__**
