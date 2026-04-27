@@ -79,7 +79,8 @@ def cmd_exists(screen_num: int) -> bool:
 def cmd_execute(command: str, screen_num_cmdshell: int,
                 screen_num_dest: int) -> None:
     # Could spawn a subprocess; for most dev workflows not needed.
-    print(f"[pdeck_sim] cmd_execute ignored: {command}")
+    from .shim_log import log
+    log("pdeck", f"cmd_execute ignored: {command}")
 
 
 def delay_tick(tick: int) -> None:
@@ -93,8 +94,10 @@ def init() -> None:
 
 def led(led_index: int, brightness: int) -> None:
     # Visualize LEDs on stderr. Not exciting but non-intrusive.
-    import sys
-    sys.stderr.write(f"[LED{led_index}={brightness}]\n")
+    # Future: this is exactly the producer that the debug overlay would
+    # consume to show LED state visually.
+    from .shim_log import log
+    log("pdeck", f"led {led_index} = {brightness}")
 
 
 def rtc(t: Optional[tuple] = None) -> tuple:

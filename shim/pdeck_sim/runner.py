@@ -71,7 +71,8 @@ def _run_main_in_thread(module, vs, args) -> threading.Thread:
         except SystemExit:
             pass
         except Exception:
-            sys.stderr.write("\n[pdeck_sim] app raised:\n")
+            from .shim_log import error
+            error("runner", "app raised:")
             traceback.print_exc()
         finally:
             # Signal the main loop that the app is done.
@@ -110,9 +111,10 @@ def main(argv=None) -> int:
     # is rooted. Users need to know this so they can drop /sd/... content
     # into the right place.
     from .paths import get_root
+    from .shim_log import log, error
     deck_root = get_root()
-    print(f"[pdeck_sim] loading {app_path.name} on screen {ns.screen}")
-    print(f"[pdeck_sim] deck filesystem root: {deck_root}")
+    log("runner", f"loading {app_path.name} on screen {ns.screen}")
+    log("runner", f"deck filesystem root: {deck_root}")
     try:
         user_module = _load_user_module(app_path)
     except Exception:
@@ -120,7 +122,7 @@ def main(argv=None) -> int:
         return 1
 
     if not hasattr(user_module, "main"):
-        print(f"error: {app_path} does not define main(vs, args)", file=sys.stderr)
+        error("runner", f"{app_path} does not define main(vs, args)")
         return 1
 
     worker = _run_main_in_thread(user_module, vs, ns.args)
@@ -152,7 +154,7 @@ def main(argv=None) -> int:
                 try:
                     v._callback(False)
                 except Exception:
-                    sys.stderr.write("\n[pdeck_sim] callback raised:\n")
+                    error("runner", "callback raised:")
                     traceback.print_exc()
                     v._callback = None
                 drew = v._drew_this_frame
@@ -161,12 +163,12 @@ def main(argv=None) -> int:
             if fb.flags.detach_requested:
                 v._callback = None
                 fb.flags.detach_requested = False
-                print("[pdeck_sim] callback detached (C-S-D)")
+                log("runner", "callback detached (C-S-D)")
 
             # Reload: F5
             if getattr(fb.flags, "reload_requested", False):
                 fb.flags.reload_requested = False
-                print(f"[pdeck_sim] reloading {app_path.name}...")
+                log("runner", f"reloading {app_path.name}...")
                 # Detach callback, let the worker finish, reload, restart.
                 v._callback = None
                 fb.flags.quit_requested = True

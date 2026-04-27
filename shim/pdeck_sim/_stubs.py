@@ -42,7 +42,8 @@ def make_pdeck_utils() -> types.ModuleType:
         return importlib.import_module(module_name)
 
     def launch(command, screen_num: int):
-        print(f"[pdeck_sim] pdeck_utils.launch ignored: {command} -> scr {screen_num}")
+        from .shim_log import log
+        log("pdeck_utils", f"launch ignored: {command} -> scr {screen_num}")
 
     mod.reimport = reimport
     mod.launch = launch
@@ -83,10 +84,10 @@ def make_audio() -> types.ModuleType:
 
     def _warn_once():
         if not _warned["value"]:
-            warnings.warn(
-                "[pdeck_sim] audio calls are stubbed — no sound output.",
-                stacklevel=3,
-            )
+            from .shim_log import warn
+            warn("audio",
+                 "audio calls are stubbed — no sound output.",
+                 stacklevel=3)
             _warned["value"] = True
 
     def sample_rate(rate=None):
@@ -172,11 +173,11 @@ def make_pie() -> types.ModuleType:
 
     def _warn_once():
         if not _warned["value"]:
-            warnings.warn(
-                "[pdeck_sim] pie sequencer is stubbed — patterns advance "
-                "in time but produce no sound.",
-                stacklevel=3,
-            )
+            from .shim_log import warn
+            warn("pie",
+                 "pie sequencer is stubbed — patterns advance "
+                 "in time but produce no sound.",
+                 stacklevel=3)
             _warned["value"] = True
 
     class _Pattern:
@@ -323,13 +324,12 @@ def make_xbmreader() -> types.ModuleType:
         try:
             text = Path(host_path).read_text()
         except FileNotFoundError:
-            import warnings
-            warnings.warn(
-                f"[pdeck_sim] XBM not found: {path} -> {host_path}. "
-                f"Set POCKETDECK_ROOT or populate ~/.pocketdeck-root/. "
-                f"Returning empty image.",
-                stacklevel=2,
-            )
+            from .shim_log import warn
+            warn("xbmreader",
+                 f"XBM not found: {path} -> {host_path}. "
+                 f"Set POCKETDECK_ROOT or populate ~/.pocketdeck-root/. "
+                 f"Returning empty image.",
+                 stacklevel=2)
             return (name, 0, 0, b"", 1)
         # XBM looks like:
         #   #define foo_width 16
@@ -381,7 +381,8 @@ def make_xbmreader() -> types.ModuleType:
     def read_xbmr(path: str) -> tuple:
         # XBMR is the deck's binary format. We don't parse it; apps that use
         # it will get an empty image. Add a parser here if needed.
-        warnings.warn(f"[pdeck_sim] xbmreader.read_xbmr('{path}') stubbed")
+        from .shim_log import warn
+        warn("xbmreader", f"read_xbmr('{path}') stubbed")
         return (Path(path).stem, 0, 0, b"", 1)
 
     mod.read = read
