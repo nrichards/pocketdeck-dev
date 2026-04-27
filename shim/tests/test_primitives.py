@@ -134,20 +134,21 @@ def test_draw_v_line_vertical_only(v):
 # ---------------------------------------------------------------------------
 
 def test_xbm_blit_single_byte_pattern(v):
-    """An 8x1 XBM with pattern 0b00000001 should set pixel 0 only.
+    """An 8x1 bitmap with pattern 0b10000000 should set pixel 0 only.
 
-    Remember XBM is LSB-first within each byte, so the least-significant
-    bit corresponds to the leftmost pixel.
+    The deck uses MSB-first packing: bit 7 of each byte is the leftmost
+    pixel. (Standard XBM is LSB-first, but the deck's xbmreader bit-
+    reverses at parse time so the blitter sees MSB-first uniformly.)
     """
-    data = bytes([0b00000001])
+    data = bytes([0b10000000])
     blit_xbm(v.fb.buffers[0], 0, 0, 8, 1, data, color=1, transparent=True)
     assert is_fg(v.fb.buffers[0], 0, 0)
     for x in range(1, 8):
         assert is_bg(v.fb.buffers[0], x, 0), f"pixel {x} should be bg"
 
 def test_xbm_blit_msb_pattern(v):
-    """0b10000000 should set pixel 7 only (LSB-first means bit 7 = pixel 7)."""
-    data = bytes([0b10000000])
+    """0b00000001 should set pixel 7 only (MSB-first means bit 0 = rightmost pixel)."""
+    data = bytes([0b00000001])
     blit_xbm(v.fb.buffers[0], 0, 0, 8, 1, data, color=1, transparent=True)
     for x in range(0, 7):
         assert is_bg(v.fb.buffers[0], x, 0), f"pixel {x} should be bg"
@@ -156,11 +157,11 @@ def test_xbm_blit_msb_pattern(v):
 def test_xbm_blit_row_padding(v):
     """A 9-pixel-wide image needs 2 bytes per row (stride = (9+7)//8 = 2).
 
-    Second byte's low bit represents pixel 8; bits 1-7 are padding.
+    With MSB-first, pixel 8 is bit 7 of the second byte = 0x80.
     """
-    # Row 0: first byte all-set (pixels 0-7), second byte 0x01 (pixel 8)
-    # Row 1: second byte 0x00 (blank row for comparison)
-    data = bytes([0xFF, 0x01,  # row 0
+    # Row 0: first byte all-set (pixels 0-7), second byte 0x80 (pixel 8)
+    # Row 1: blank row for comparison
+    data = bytes([0xFF, 0x80,  # row 0
                   0x00, 0x00])  # row 1
     blit_xbm(v.fb.buffers[0], 0, 0, 9, 2, data, color=1, transparent=True)
     for x in range(9):
@@ -190,8 +191,9 @@ def test_xbm_blit_transparent_vs_solid(v):
     """Transparent mode leaves background alone for 0-bits; solid mode plots bg."""
     # Pre-fill buffer with foreground
     v.draw_box(0, 0, 20, 10)
-    # Now blit a pattern with transparent=False; 0-bits should erase
-    data = bytes([0b00000001])  # only pixel 0 set
+    # Now blit a pattern with transparent=False; 0-bits should erase.
+    # MSB-first: 0b10000000 = pixel 0 only
+    data = bytes([0b10000000])
     blit_xbm(v.fb.buffers[0], 0, 0, 8, 1, data, color=1, transparent=False)
     # Pixel 0 still foreground (from the bitmap)
     assert is_fg(v.fb.buffers[0], 0, 0)
@@ -206,7 +208,13 @@ def test_xbm_blit_transparent_vs_solid(v):
 # ---------------------------------------------------------------------------
 
 def test_xbmreader_parses_basic_xbm(tmp_path):
-    """Hand-written XBM file parses to the expected tuple."""
+    """Hand-written XBM file parses and bit-reverses to MSB-first.
+
+    Standard XBM is LSB-first on disk. The deck (and the shim's
+    fallback) bit-reverse each byte at parse time so the blitter sees
+    MSB-first uniformly. So 0xFF stays 0xFF (palindromic), 0x00 stays
+    0x00, but a non-palindromic byte like 0x01 becomes 0x80.
+    """
     xbm_text = """#define test_width 8
 #define test_height 2
 static char test_bits[] = {
@@ -220,8 +228,27 @@ static char test_bits[] = {
     assert name == "test"
     assert w == 8
     assert h == 2
+    # 0xFF and 0x00 are palindromic — bit-reversal is a no-op for these
     assert data == bytes([0xFF, 0x00])
     assert frames == 1
+
+def test_xbmreader_bit_reverses_non_palindromic(tmp_path):
+    """Verify the bit-reversal explicitly with a non-palindromic byte.
+
+    0x81 = 0b10000001 reversed = 0b10000001 (also palindromic — try 0x01)
+    0x01 = 0b00000001 reversed = 0b10000000 = 0x80
+    """
+    xbm_text = """#define test_width 8
+#define test_height 1
+static char test_bits[] = { 0x01 };
+"""
+    p = tmp_path / "rev.xbm"
+    p.write_text(xbm_text)
+
+    import xbmreader
+    name, w, h, data, frames = xbmreader.read(str(p))
+    # 0x01 (LSB-first source) -> 0x80 (MSB-first deck convention)
+    assert data == bytes([0x80])
 
 def test_xbmreader_scale_doubles_image():
     """Scale factor 2 produces 2x width, 2x height, same pattern doubled."""

@@ -51,6 +51,26 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Debug panel
+
+The shim displays a side panel to the right of the LCD showing runtime
+state that wouldn't be visible on the device:
+
+- Active virtual screen number (1-9)
+- LED brightness for all 8 LEDs (filled amber circle = lit; intensity
+  encodes brightness; hollow ring = off)
+- Audio activity indicator — a green dot lights up while the audio
+  engine is being polled, idle gray when silent
+- FPS counter and total frame count
+
+The panel is visually separated from the LCD by a 1-pixel divider and
+uses a slightly cooler background tint. Everything to the right of the
+divider is shim-only — never visible on the actual device.
+
+Disable the panel with `POCKETDECK_DEBUG_PANEL=0`. Useful when taking
+screenshots of just the LCD content, or when running automated tests
+that pin window dimensions.
+
 ## Run an app
 
 ```bash
@@ -84,18 +104,42 @@ Mirror the deck's layout inside that root:
 ```
 $POCKETDECK_ROOT/
   sd/
-    lib/data/ghost1.xbm       <- resolves /sd/lib/data/ghost1.xbm
-    py/my_app.py
+    py/
+      my_app.py             <- user apps (highest sys.path priority)
+    lib/
+      xbmreader.py          <- deck library modules (real source)
+      esclib.py
+      data/ghost1.xbm
     Documents/
   config/
     apps.json
 ```
 
-The simplest way to populate it is to SCP a subtree off your deck:
+The shim mirrors MicroPython's import priority on the deck: `/sd/py`
+takes priority over `/sd/lib`, matching the device's behavior where
+user code can override library modules.
+
+## Real modules vs fallback stubs
+
+When `$POCKETDECK_ROOT/sd/lib/<module>.py` exists, the shim uses the
+real deck source — no stub, no behavioral approximation, just the
+actual library code. This applies to `xbmreader`, `esclib`,
+`pdeck_utils`, `overlay`, `benchmark`, `jp_input`, and `ls`.
+
+When the real module isn't available (POCKETDECK_ROOT unset, or sd/lib
+not populated), the shim installs a fallback stub instead.
+
+A few modules are **always stubbed** because they're C-native on the
+deck and have no Python implementation: `pdeck`, `audio`, `pie`,
+`dsplib`, `re_test`. Even if a `.py` of the same name exists in your
+deck root, the shim uses its own stubs for these.
+
+The simplest way to populate the root is to symlink your deck source
+checkout:
 
 ```bash
-mkdir -p ~/.pocketdeck-root/sd/lib
-scp -r user@<deck-ip>:/sd/lib/data ~/.pocketdeck-root/sd/lib/
+mkdir -p ~/.pocketdeck-root/sd
+ln -s ~/proj/pocket-deck/pocketdeck/lib ~/.pocketdeck-root/sd/lib
 ```
 
 If an app references a `/sd/...` path that doesn't exist under the root,

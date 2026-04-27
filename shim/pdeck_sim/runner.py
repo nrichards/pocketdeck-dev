@@ -175,11 +175,21 @@ def main(argv=None) -> int:
                 break
 
             # Present only if something changed. This is the skip-update
-            # optimization: callback-less frames, or callbacks that return
-            # without drawing, don't push pixels to the window.
-            if drew or fb.flags.needs_repaint:
+            # optimization mirroring the deck's energy savings — when the
+            # callback returns without drawing, the LCD holds its last
+            # frame and no work happens.
+            #
+            # When the debug panel is enabled, we present every frame so
+            # the panel's live indicators (FPS, audio activity, LED state)
+            # stay current. The panel only exists on the simulator; it
+            # doesn't break the device-skip-update parity for app code.
+            should_present = drew or fb.flags.needs_repaint or fb.panel_enabled
+            if should_present:
                 fb.present()
                 fb.flags.needs_repaint = False
+                # Producer hook: the FPS counter is driven by frame ticks.
+                from .debug_state import get_debug_state
+                get_debug_state().note_frame()
 
             elapsed = time.time() - t0
             if elapsed < frame_time:

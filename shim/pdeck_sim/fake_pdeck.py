@@ -42,6 +42,9 @@ def get_screen_num() -> int:
 
 def change_screen(screen: int) -> None:
     Vscreen._current_screen = int(screen)
+    # Producer hook for the debug panel
+    from .debug_state import get_debug_state
+    get_debug_state().active_screen = int(screen)
 
 
 def change_priority(priority: bool) -> None:
@@ -93,10 +96,13 @@ def init() -> None:
 
 
 def led(led_index: int, brightness: int) -> None:
-    # Visualize LEDs on stderr. Not exciting but non-intrusive.
-    # Future: this is exactly the producer that the debug overlay would
-    # consume to show LED state visually.
+    # Producer hook for the debug panel: store brightness so the panel
+    # can render the LED state. Also log to stderr for headless use.
     from .shim_log import log
+    from .debug_state import get_debug_state
+    state = get_debug_state()
+    if 0 <= led_index < len(state.led_brightness):
+        state.led_brightness[led_index] = max(0, min(255, int(brightness)))
     log("pdeck", f"led {led_index} = {brightness}")
 
 
