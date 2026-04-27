@@ -4,26 +4,43 @@ A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop
 
 ## What's covered
 
-- `pdeck` module: `vscreen()`, `get_screen_size()`, `clipboard_copy/paste`, `led()` (prints), `delay_tick()`, `change_screen()`, `show_screen_num()`, `cmd_exists()`, `screen_invert()`, `rtc()`, basic terminal-font getters.
+- `pdeck` module: `vscreen()`, `get_screen_size()`, `clipboard_copy/paste`,
+  `led()` (prints), `delay_tick()`, `change_screen()`, `show_screen_num()`,
+  `cmd_exists()`, `screen_invert()`, `rtc()`, basic terminal-font getters.
 - `vscreen` object:
-  - All primitive shapes: `draw_pixel`, `draw_line`, `draw_h_line`, `draw_v_line`, `draw_box`, `draw_frame`, `draw_rframe`, `draw_rbox`, `draw_circle`, `draw_disc`, `draw_triangle`, `draw_arc`, `draw_ellipse`, `draw_filled_ellipse`, `draw_polygon`.
-  - Text: `draw_str`, `draw_utf8`, `get_str_width`, `get_utf8_width`, `set_font`, `set_font_mode`.
+  - All primitive shapes: `draw_pixel`, `draw_line`, `draw_h_line`,
+    `draw_v_line`, `draw_box`, `draw_frame`, `draw_rframe`, `draw_rbox`,
+    `draw_circle`, `draw_disc`, `draw_triangle`, `draw_arc`, `draw_ellipse`,
+    `draw_filled_ellipse`, `draw_polygon`.
+  - Text: `draw_str`, `draw_utf8`, `get_str_width`, `get_utf8_width`,
+    `set_font`, `set_font_mode`.
   - Bitmaps: `draw_xbm`, `draw_image`, `capture_as_xbm`, `set_bitmap_mode`.
   - Color / dither: `set_draw_color`, `set_dither`.
   - Buffers: `clear_buffer`, `switch_buffer`, `copy_buffer`.
   - Callback system: `callback`, `callback_exists`, `finished`.
-  - I/O: `print`, `send_char`, `send_key_event`, `read_nb`, `poll`, `get_key_state`, `get_tp_keys`, `get_terminal_size`.
+  - I/O: `print`, `send_char`, `send_key_event`, `read_nb`, `poll`,
+    `get_key_state`, `get_tp_keys`, `get_terminal_size`.
   - Property: `active`, `suspend_inactive_screen`.
 - `pdeck_utils` with `reimport()` and `launch()` stubs.
 - `xbmreader` and a small `esclib` stub to support the common example shape.
 
 ## What's not covered
 
-- `audio` module. Stubbed with no-ops so imports don't fail. You'll see a warning printed when you call into it. Open an issue or add to `_stubs.py` if you need specific audio calls mocked.
-- Exact u8g2 font metrics. `get_str_width` uses a fixed-width approximation based on the selected font's nominal size. For pixel-perfect parity, use option 2 from the design doc (ctypes over a real u8g2 dylib).
-- Multi-threaded multi-screen behavior. The shim renders **one active screen** at a time (screen 2 by default). You can switch with keyboard shortcuts but there's no concurrent background-thread rendering like the real deck does.
-
-## Future
+- **Audio output**. The `audio` and `pie` modules are stubbed for
+  API-shape compatibility — examples like `pattern_example.py` and
+  `reverb_example.py` will run to completion exercising their
+  control-flow logic, but no sound is produced. The `Pie` sequencer's
+  `playing_cycle` does advance over wall-clock time at the configured
+  BPM, so apps that use cycle progression to advance through patterns
+  work correctly. For actually hearing sound, run on device via the
+  sync tooling.
+- Exact u8g2 font metrics. `get_str_width` uses a fixed-width approximation
+  based on the selected font's nominal size. For pixel-perfect parity, use
+  option 2 from the design doc (ctypes over a real u8g2 dylib).
+- Multi-threaded multi-screen behavior. The shim renders **one active
+  screen** at a time (screen 2 by default). You can switch with keyboard
+  shortcuts but there's no concurrent background-thread rendering like the
+  real deck does.
 
 ## Install
 
@@ -107,10 +124,12 @@ translates.
 Inside the pygame window:
 
 - `ESC` or window close — quit
-- `F5` — reload the currently-running app module from disk (handy with an editor)
+- `F5` — reload the currently-running app module from disk (handy with an
+  editor)
 - `F6` — toggle the invert flag (just like `screen_invert` on device)
 - `F11` — toggle 2× scale for readability
-- `Ctrl+Shift+D` — detach the current vscreen callback (mirrors the deck's "kill graphic app" shortcut)
+- `Ctrl+Shift+D` — detach the current vscreen callback (mirrors the deck's
+  "kill graphic app" shortcut)
 - Any printable key — fed to `read_nb()` and `get_key_state()`
 
 ## How the app lookup works
@@ -121,7 +140,8 @@ The runner takes a path to a `.py` file that defines `main(vs, args)`. It:
 2. Imports the module by basename (minus `.py`).
 3. Creates a `vscreen_stream`, opens a pygame window, calls `main(vs, args)`.
 
-If your app imports sibling modules (e.g. `import overlay`), as long as they sit in the same directory they'll resolve.
+If your app imports sibling modules (e.g. `import overlay`), as long as they
+sit in the same directory they'll resolve.
 
 # Testing
 

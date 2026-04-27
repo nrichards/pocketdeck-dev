@@ -54,8 +54,32 @@ def make_pdeck_utils() -> types.ModuleType:
 # ---------------------------------------------------------------------------
 
 def make_audio() -> types.ModuleType:
+    """Stub for the deck's `audio` module.
+
+    The deck's audio module is implemented in native C against ESP32
+    hardware. We can't reasonably reproduce it on a Mac, so this stub
+    provides API-shape compatibility: methods exist with the right
+    signatures and return plausible values, but no sound is produced.
+
+    Two pieces of state matter for pattern_example.py and friends:
+
+    1. `sample_rate(rate)` is a setter; `sample_rate()` is a getter.
+       Pattern timing depends on this value, so we track it.
+
+    2. `get_current_tick()` must advance over wall-clock time. The
+       Pie sequencer uses tick deltas to decide when to advance to
+       the next cycle. A static tick deadlocks any pattern loop.
+
+    All other audio module classes (sampler, wavetable, router,
+    reverb, compressor, filter, echo, mixer) are accept-anything
+    no-op classes with __enter__/__exit__ for context-manager use.
+    """
     mod = types.ModuleType("audio")
     _warned = {"value": False}
+    _state = {
+        "sample_rate": 24000,
+        "start_time": time.monotonic(),
+    }
 
     def _warn_once():
         if not _warned["value"]:
@@ -65,20 +89,216 @@ def make_audio() -> types.ModuleType:
             )
             _warned["value"] = True
 
-    class _Wavetable:
-        def __init__(self, *a, **kw): _warn_once()
+    def sample_rate(rate=None):
+        _warn_once()
+        if rate is not None:
+            _state["sample_rate"] = int(rate)
+        return _state["sample_rate"]
+
+    def get_current_tick():
+        """Returns simulated audio tick — sample count since 'start'.
+
+        Real device: hardware-counted samples since boot. Stub: derived
+        from wall-clock time × current sample rate. Close enough that
+        Pattern-driven loops advance through their cycles in roughly
+        the BPM-correct timeline, which is the only thing apps observe.
+        """
+        elapsed = time.monotonic() - _state["start_time"]
+        return int(elapsed * _state["sample_rate"])
+
+    class _NoopAudioModule:
+        """Generic placeholder for audio.sampler / wavetable / etc.
+
+        Accepts any positional/keyword args, supports `with`, and has
+        every method return None or a sensible default. Avoids needing
+        to enumerate every method the apps might call.
+        """
+        def __init__(self, *a, **kw):
+            _warn_once()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __getattr__(self, name):
+            # Sensible defaults for the few methods whose return value
+            # the app actually inspects:
+            if name == "load_wavetable":
+                # Returns the number of frames loaded
+                return lambda *a, **kw: 32
+            if name == "load_wav":
+                return lambda *a, **kw: 0
+            # Everything else: return-None no-op
+            return lambda *a, **kw: None
+
+    mod.sample_rate = sample_rate
+    mod.get_current_tick = get_current_tick
+    # Expose the stub class under every name apps construct from.
+    for name in ("sampler", "wavetable", "router", "reverb",
+                 "compressor", "filter", "echo", "mixer"):
+        setattr(mod, name, _NoopAudioModule)
+    return mod
+
+
+# ---------------------------------------------------------------------------
+# pie — the Pocket Deck pattern sequencer
+# ---------------------------------------------------------------------------
+
+def make_pie() -> types.ModuleType:
+    """Stub for the deck's `pie` module.
+
+    Pie is a wavetable-synth pattern sequencer with a TidalCycles-inspired
+    mini-DSL. It's pure Python on top of the C `audio` module on device.
+    In principle we could ship the real `pie.py` here unmodified, since
+    its only external dependency is `audio` which we already stub —
+    but the real Pattern parser is heavy and would just produce silent
+    output anyway. The stub provides:
+
+      - All Pie* classes as context managers with no-op methods.
+      - A Pattern object whose chaining methods (.strum(), .scale(),
+        .transpose(), .clip(), .fast(), .slow()) all return self.
+      - A Pie sequencer with playing_cycle that advances over wall-clock
+        time at the configured BPM, so apps that loop on cycle progression
+        actually advance through their patterns.
+
+    The result: audio examples run to completion silently, exercising
+    their control-flow logic. Useful as a smoke test that the example
+    imports cleanly and doesn't crash on its setup phase.
+    """
+    mod = types.ModuleType("pie")
+    _warned = {"value": False}
+
+    def _warn_once():
+        if not _warned["value"]:
+            warnings.warn(
+                "[pdeck_sim] pie sequencer is stubbed — patterns advance "
+                "in time but produce no sound.",
+                stacklevel=3,
+            )
+            _warned["value"] = True
+
+    class _Pattern:
+        """Fluent no-op pattern. Every modifier returns self."""
+        def __init__(self, data=None, preprocess=None):
+            self._str = data if isinstance(data, str) else None
+            self._data = data
+
+        # Chainable modifiers. All return self so .strum().scale()... works.
+        def fast(self, n): return self
+        def slow(self, n): return self
+        def clip(self, n): return self
+        def strum(self, n): return self
+        def scale(self, s): return self
+        def transpose(self, n): return self
+
+        def clear_cache(self): pass
+
+        def get_events(self, cycle=0): return []
+
+        def print_str(self): return self._str or ""
+
+    class _Pie:
+        """Sequencer with a wall-clock-driven playing_cycle.
+
+        Real device: cycle = (audio_tick - base_tick) / cycle_samples.
+        Stub: cycle = (now - start) * bpm / 60 / 4. Same semantics,
+        different clock source. This makes `check_cycle()` in apps
+        actually progress instead of looping forever.
+        """
+        def __init__(self, bpm=120, startup_delay_ms=100):
+            _warn_once()
+            self.bpm = bpm
+            self.startup_delay_ms = startup_delay_ms
+            self.patterns = []
+            self._running = False
+            self._start_time = None
+
+        def __enter__(self):
+            self.start()
+            return self
+
+        def __exit__(self, *a):
+            self.stop()
+            return False
+
+        def start(self):
+            self._running = True
+            self._start_time = time.monotonic()
+
+        def stop(self):
+            self._running = False
+
+        @property
+        def playing_cycle(self):
+            if not self._running or self._start_time is None:
+                return 0
+            elapsed = time.monotonic() - self._start_time
+            # 4 beats per cycle; bpm beats per minute.
+            return elapsed * self.bpm / 60.0 / 4.0
+
+        def get_tick_from_cycle(self, cycle):
+            return int(cycle * 24000 * 60 / self.bpm * 4)
+
+        def pattern(self, instrument, data):
+            return _Pattern(data)
+
+        def add(self, instrument, pattern):
+            self.patterns.append((instrument, pattern))
+            return len(self.patterns) - 1
+
+        def remove(self, index):
+            if 0 <= index < len(self.patterns):
+                del self.patterns[index]
+            return index
+
+        def update(self, index, pattern):
+            if 0 <= index < len(self.patterns):
+                self.patterns[index] = (self.patterns[index][0], pattern)
+                return index
+            return -1
+
+        def clear(self):
+            self.patterns = []
+
+        def process_event(self):
+            pass  # No real audio engine to drive
+
+    class _PieInstrument:
+        """Base for PieWavetable, PieReverb, PieRouter, PieCompressor, etc.
+
+        All Pie* wrappers expose a `dev` attribute that delegates to the
+        underlying audio.* object. We provide a no-op `dev` and accept
+        any method call.
+        """
+        def __init__(self, *a, **kw):
+            _warn_once()
+            self.dev = _PieDev()
+
         def __enter__(self): return self
         def __exit__(self, *a): return False
 
-        # Any attribute access returns a no-op
         def __getattr__(self, name):
-            def _noop(*a, **kw): return None
-            return _noop
+            if name == "load_wavetable":
+                return lambda *a, **kw: 32  # apps use the return value
+            return lambda *a, **kw: None
 
-    def sample_rate(*a, **kw): _warn_once()
+    class _PieDev:
+        """No-op stand-in for Pie*.dev.
 
-    mod.wavetable = _Wavetable
-    mod.sample_rate = sample_rate
+        Apps poke methods like `wv.dev.set_adsr(...)`, `comp.dev.active(True)`.
+        We accept everything.
+        """
+        def __getattr__(self, name):
+            return lambda *a, **kw: None
+
+    mod.Pie = _Pie
+    mod.Pattern = _Pattern
+    # All instrument/effect wrappers share the same no-op behavior
+    for name in ("PieSampler", "PieWavetable", "PieReverb", "PieRouter",
+                 "PieCompressor", "PieFilter", "PieEcho", "PieMixer"):
+        setattr(mod, name, _PieInstrument)
     return mod
 
 
@@ -278,6 +498,7 @@ def install_all() -> None:
 
     sys.modules["pdeck_utils"] = make_pdeck_utils()
     sys.modules["audio"] = make_audio()
+    sys.modules["pie"] = make_pie()
     sys.modules["xbmreader"] = make_xbmreader()
     sys.modules["esclib"] = make_esclib()
     sys.modules["overlay"] = make_overlay()
