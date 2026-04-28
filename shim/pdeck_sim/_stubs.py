@@ -656,6 +656,13 @@ def make_network() -> types.ModuleType:
             _warn_once()
             self._interface = interface
             self._active = False
+            # Track whether connect() has been called. This drives the
+            # status() return value: until connect() is called we report
+            # STAT_IDLE; afterward we report STAT_NO_AP_FOUND so that
+            # apps polling status() in a loop see a real terminal value
+            # and break out instead of waiting indefinitely for
+            # STAT_GOT_IP, which on the shim never comes.
+            self._connect_attempted = False
 
         def active(self, state=None):
             """Turn the radio on/off; with no arg, returns current state."""
@@ -665,8 +672,18 @@ def make_network() -> types.ModuleType:
 
         def connect(self, ssid=None, password=None, **kwargs):
             """Initiate a Wi-Fi connection. No-op on shim — never actually
-            connects, so subsequent isconnected() returns False."""
-            pass
+            connects. We mark the attempt so that subsequent status()
+            calls return STAT_NO_AP_FOUND rather than perpetually
+            STAT_IDLE; an app polling status() in a loop will see a real
+            terminal value and break out of the loop instead of hanging
+            forever waiting for STAT_GOT_IP.
+
+            Warns on every call (not just the first) so a developer
+            stuck in a connect-and-poll loop sees the offline diagnosis
+            even if the construction warning was missed."""
+            from .shim_log import warn
+            warn("network", "WLAN.connect() called on shim — will not connect")
+            self._connect_attempted = True
 
         def disconnect(self):
             pass
@@ -678,7 +695,16 @@ def make_network() -> types.ModuleType:
             return False
 
         def status(self, *args):
-            """Returns connection status. STAT_IDLE = "haven't tried"."""
+            """Returns connection status.
+
+            Apps loop on this value waiting for STAT_GOT_IP; on the
+            shim that never happens. We report STAT_NO_AP_FOUND once
+            connect() has been attempted, so the common polling pattern
+            terminates with a real failure code. Before any connect()
+            call we report STAT_IDLE — the device-faithful "haven't
+            tried" answer."""
+            if self._connect_attempted:
+                return mod.STAT_NO_AP_FOUND
             return mod.STAT_IDLE
 
         def ifconfig(self, config=None):
@@ -700,12 +726,6 @@ def make_network() -> types.ModuleType:
             return None
 
     mod.WLAN = WLAN
-
-    # Some apps reference the older `network.phy_mode` API. Stubs:
-    mod.phy_mode = lambda *a, **kw: 0
-    mod.MODE_11B = 0
-    mod.MODE_11G = 1
-    mod.MODE_11N = 2
 
     # Bluetooth — also under network on ESP32. We stub the bare minimum.
     class Bluetooth:

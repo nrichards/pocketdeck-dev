@@ -209,3 +209,7 @@ SDL_VIDEODRIVER=dummy pytest -v
 # or a single test
 SDL_VIDEODRIVER=dummy pytest -v -k reimport
 ```
+
+# Architecture
+
+See [diagram](docs/pdeck_sim_architecture.png).

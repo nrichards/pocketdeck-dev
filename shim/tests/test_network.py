@@ -119,6 +119,53 @@ def test_status_constants_exist():
 
 
 # ---------------------------------------------------------------------------
+# Status transition: STAT_IDLE -> STAT_NO_AP_FOUND after connect()
+#
+# An earlier version of the stub returned STAT_IDLE forever. Apps that
+# poll status() waiting for STAT_GOT_IP would hang. The current behavior
+# is that connect() flips a flag so subsequent status() returns
+# STAT_NO_AP_FOUND — a real terminal failure code — and apps can exit
+# their poll loop on the offline path.
+# ---------------------------------------------------------------------------
+
+def test_status_is_idle_before_connect():
+    """A freshly-constructed WLAN reports STAT_IDLE."""
+    import network
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wlan = network.WLAN(network.STA_IF)
+    assert wlan.status() == network.STAT_IDLE
+
+def test_status_becomes_no_ap_found_after_connect():
+    """After connect(), status() reports a terminal failure code so polling
+    loops can exit instead of waiting indefinitely for STAT_GOT_IP."""
+    import network
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        wlan = network.WLAN(network.STA_IF)
+        wlan.connect("ssid", "password")
+    assert wlan.status() == network.STAT_NO_AP_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Warning fires on first WLAN construction
+#
+# We test the factory directly rather than going through `import network`,
+# because install_all() runs at module import time and the cached module's
+# warn-once flag is already tripped by then.
+# ---------------------------------------------------------------------------
+
+def test_warning_fires_on_first_wlan_construction():
+    """The shim is supposed to advertise itself the first time an app
+    reaches for the network. A regression here would silently leave
+    apps stuck in offline-fallback paths without telling the developer."""
+    from pdeck_sim._stubs import make_network
+    fresh = make_network()
+    with pytest.warns(UserWarning, match="network module is stubbed"):
+        fresh.WLAN(fresh.STA_IF)
+
+
+# ---------------------------------------------------------------------------
 # Bluetooth — also under network on ESP32
 # ---------------------------------------------------------------------------
 
