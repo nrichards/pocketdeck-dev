@@ -51,6 +51,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Confirm installation by launching the simulator with an example application:
+
+```bash
+python3 -m pdeck_sim.runner ../examples/primitive_tour.py
+```
+
 ## Debug panel
 
 The shim displays a side panel to the right of the LCD showing runtime
