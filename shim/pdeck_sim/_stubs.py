@@ -594,6 +594,131 @@ def make_micropython() -> types.ModuleType:
 
 
 # ---------------------------------------------------------------------------
+# network — MicroPython's network interface module.
+#
+# On ESP32, `network` provides direct control over Wi-Fi (STA and AP modes),
+# Bluetooth, and (on some boards) Ethernet. It's how the deck connects to
+# Wi-Fi for time sync, weather, HTTP, etc. It's a MicroPython core module
+# with no CPython equivalent — CPython networking is socket/urllib/etc.,
+# with the OS managing interfaces.
+#
+# The shim cannot replicate this — your Mac's Wi-Fi is managed by macOS,
+# not by Python. So we provide a stub that:
+#   - Lets `import network` succeed
+#   - Provides WLAN, AP_IF, STA_IF as the common reference points
+#   - Returns isconnected() = False so apps skip online features rather
+#     than hanging on a non-functional connect()
+#   - Returns ifconfig() with plausible loopback-ish defaults
+#
+# Apps that REALLY want to make HTTP requests can still use CPython's
+# requests/urllib directly — those work because they go through the OS
+# stack, not through MicroPython's network module. So features like time
+# sync (urequests-based) might continue to work via CPython's stack
+# without needing network module functionality.
+# ---------------------------------------------------------------------------
+
+def make_network() -> types.ModuleType:
+    """Stub for MicroPython's `network` module.
+
+    Provides the standard WLAN/STA_IF/AP_IF interface so apps can
+    construct a network object and check status. All operations return
+    "offline" — isconnected() is False, ifconfig() returns 0.0.0.0
+    placeholders. No actual networking happens.
+    """
+    mod = types.ModuleType("network")
+    _warned = {"value": False}
+
+    def _warn_once():
+        if not _warned["value"]:
+            from .shim_log import warn
+            warn("network",
+                 "network module is stubbed — no actual Wi-Fi or BT "
+                 "connection. isconnected() will return False; apps "
+                 "should fall back to offline behavior.",
+                 stacklevel=3)
+            _warned["value"] = True
+
+    # MicroPython interface mode constants. Apps reference these by name
+    # when constructing a WLAN. Numeric values match MicroPython's actual
+    # constants for fidelity.
+    mod.STA_IF = 0      # station interface (client)
+    mod.AP_IF = 1       # access point interface
+    mod.STAT_IDLE = 1000
+    mod.STAT_CONNECTING = 1001
+    mod.STAT_GOT_IP = 1010
+    mod.STAT_NO_AP_FOUND = 201
+    mod.STAT_WRONG_PASSWORD = 202
+
+    class WLAN:
+        """Stub for network.WLAN. Constructed with an interface mode
+        (STA_IF or AP_IF). All methods return "offline" defaults."""
+        def __init__(self, interface=0):
+            _warn_once()
+            self._interface = interface
+            self._active = False
+
+        def active(self, state=None):
+            """Turn the radio on/off; with no arg, returns current state."""
+            if state is not None:
+                self._active = bool(state)
+            return self._active
+
+        def connect(self, ssid=None, password=None, **kwargs):
+            """Initiate a Wi-Fi connection. No-op on shim — never actually
+            connects, so subsequent isconnected() returns False."""
+            pass
+
+        def disconnect(self):
+            pass
+
+        def isconnected(self):
+            """Always False on the shim. This is the device-faithful
+            offline answer; apps that gate online features on this will
+            gracefully skip them."""
+            return False
+
+        def status(self, *args):
+            """Returns connection status. STAT_IDLE = "haven't tried"."""
+            return mod.STAT_IDLE
+
+        def ifconfig(self, config=None):
+            """Get/set interface configuration. Returns 4-tuple
+            (ip, netmask, gateway, dns). Plausible defaults so apps
+            that read this don't crash on `None.split('.')` etc."""
+            if config is not None:
+                return None  # setter form, no-op
+            return ("0.0.0.0", "0.0.0.0", "0.0.0.0", "0.0.0.0")
+
+        def scan(self):
+            """Scan for SSIDs. Returns empty list — no networks visible
+            from the shim's offline simulation."""
+            return []
+
+        def config(self, *args, **kwargs):
+            """Get/set various interface config. Returns None for any
+            getter; accepts and ignores any setter."""
+            return None
+
+    mod.WLAN = WLAN
+
+    # Some apps reference the older `network.phy_mode` API. Stubs:
+    mod.phy_mode = lambda *a, **kw: 0
+    mod.MODE_11B = 0
+    mod.MODE_11G = 1
+    mod.MODE_11N = 2
+
+    # Bluetooth — also under network on ESP32. We stub the bare minimum.
+    class Bluetooth:
+        def __init__(self, *a, **kw):
+            _warn_once()
+        def __getattr__(self, name):
+            return lambda *a, **kw: None
+    mod.Bluetooth = Bluetooth
+
+    return mod
+
+
+# ---------------------------------------------------------------------------
 # re_test — opaque stub
 #
 # Imported by lib/examples/dither_test.py but never referenced. Almost
@@ -932,6 +1057,7 @@ _ALWAYS_SHIM = {
     "dsplib": None,
     "re_test": None,       # opaque private harness
     "micropython": None,   # MicroPython builtin module
+    "network": None,       # MicroPython builtin: Wi-Fi / BT interface
 }
 
 # Modules where a real .py exists in the deck repo (under /sd/lib). The
@@ -1015,6 +1141,7 @@ def install_all() -> None:
     sys.modules["pie"] = make_pie()
     sys.modules["dsplib"] = make_dsplib()
     sys.modules["re_test"] = make_re_test()
+    sys.modules["network"] = make_network()
     # micropython: reuse the same instance patched into builtins so that
     # `import micropython` and the implicit-builtins access return the
     # same object. Otherwise a module that does `import micropython` and

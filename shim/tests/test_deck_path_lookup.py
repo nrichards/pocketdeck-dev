@@ -101,7 +101,8 @@ def test_always_shim_modules_are_native_only():
     real-Python equivalent on the deck — either C native modules in the
     firmware (pdeck, audio, pie, dsplib), MicroPython builtins
     (micropython), or Nunomo-internal harness modules (re_test)."""
-    expected = {"pdeck", "audio", "pie", "dsplib", "re_test", "micropython"}
+    expected = {"pdeck", "audio", "pie", "dsplib", "re_test",
+                "micropython", "network"}
     assert set(_ALWAYS_SHIM.keys()) == expected
 
 def test_fallback_shim_modules_have_factories():
