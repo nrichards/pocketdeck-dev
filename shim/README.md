@@ -42,6 +42,97 @@ A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop
   shortcuts but there's no concurrent background-thread rendering like the
   real deck does.
 
+## Simulator-device divergences
+
+The shim runs on CPython; the device runs MicroPython on ~256 KB of RAM.
+Most app code is portable, but several classes of divergence can silently
+produce code that passes all simulator tests and then breaks on device.
+
+### Silent divergences (highest risk)
+
+**Memory exhaustion.** The sim has no heap limit. Object-heavy loops,
+large list comprehensions, or string buffers that work fine on the desktop
+will hit `MemoryError` on-device with no prior warning. Tighten allocation
+in any loop that creates temporaries, and test memory-heavy paths on device
+early.
+
+**Integer and float precision.** CPython integers have arbitrary precision;
+MicroPython uses 30-bit small ints on 32-bit ARM (range ≈ ±536M). Arithmetic
+that silently overflows stays silent — the device produces a wrong number, not
+an exception. Floats are 32-bit on device vs 64-bit in the sim; graphics code
+using trigonometry or physics will accumulate slightly different rounding
+errors.
+
+**Unshimmed stdlib modules.** `import re`, `import json`, `import math`
+(for CPython-only additions like `math.gcd`, `math.comb`, `math.isqrt`),
+`import traceback`, `import functools` — all succeed in the sim, all raise
+`ImportError` on device. These are green paths in the simulator that only
+reveal themselves on first deploy.
+
+**`os` module partial coverage.** `os.listdir()` and `os.stat()` are
+sandboxed correctly. `os.mkdir()`, `os.makedirs()`, `os.rename()`, and
+`os.remove()` are not shimmed — they operate on the host filesystem directly
+and may succeed in the sim while failing differently on device.
+
+**Audio tick drift.** `audio.get_current_tick()` returns synthetic ticks
+derived from wall-clock time, not actual audio-interrupt ticks. Patterns
+that appear tightly synced in the sim will drift on-device if the app does
+not poll frequently enough.
+
+**`set_dither()` is a no-op.** The sim tracks the dither level but does not
+render it. Visual quality decisions — gradient rendering, aliasing on curved
+shapes — cannot be validated in the sim.
+
+### Divergences that crash early on device
+
+**CPython 3.8+ syntax.** Walrus operator (`:=`), `match`/`case`, positional-only
+parameters (`/`), and `int | str` union type hints are valid CPython but are
+syntax errors on MicroPython. Avoid them in app code.
+
+**`threading`.** Fully functional in the sim; raises `ImportError` on device.
+Background threads used for periodic updates need a redesign for device
+deployment.
+
+**Relative file paths.** MicroPython has no concept of a working directory.
+`open("data.txt")` resolves against the host shell's cwd in the sim and raises
+`FileNotFoundError` on device. Always use deck-absolute paths: `/sd/…`,
+`/config/…`, `/int/…`.
+
+### Behavioral differences
+
+**`struct.unpack()` leniency.** The sim patches `struct` to silently truncate
+oversized buffers. MicroPython's `struct` is stricter about buffer sizes and
+will raise an error where the sim succeeds.
+
+**`@micropython.viper` and `@micropython.native` are no-ops.** Decorated
+functions run as ordinary CPython. Code that is only fast enough under viper
+compilation will be too slow on-device, with no warning emitted by the sim.
+
+**`str` method gaps.** MicroPython's `str` is missing CPython methods added in
+3.9+: `removeprefix()`, `removesuffix()`, and `casefold()`. Code using these
+will raise `AttributeError` on device.
+
+### Planned guardrails
+
+The following simulator-side checks are not yet implemented but would catch
+most of the above early:
+
+- **Import warnings** — intercept `import re`, `import json`, `import traceback`,
+  and other device-absent modules at import time and emit a `[pdeck_sim] WARNING`
+  before allowing the import to proceed.
+- **Heap budget mode** — a `POCKETDECK_HEAP_LIMIT` env var (default `262144`)
+  that raises `MemoryError` once a configurable allocation threshold is
+  exceeded, making memory pressure visible in the sim.
+- **Relative path warnings** — warn in `paths.translate()` when a path does not
+  start with `/sd/`, `/config/`, or `/int/`, as the device has no cwd to resolve
+  against.
+- **`@viper` annotation notice** — emit a one-time `[pdeck_sim] @viper is a
+  no-op in the simulator` when the decorator is first applied.
+- **Startup syntax check** — before running the app, scan source files for
+  CPython 3.8+ syntax tokens and warn before execution.
+- **Float32 mode** — a `POCKETDECK_FLOAT32=1` env var that caps float precision
+  to 32-bit so accumulation differences are visible during sim runs.
+
 ## Install
 
 ```bash
