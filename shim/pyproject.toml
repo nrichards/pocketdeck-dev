@@ -1,3 +1,6 @@
+[project]
+name = "pdeck_sim"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

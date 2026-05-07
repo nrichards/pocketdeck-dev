@@ -112,8 +112,9 @@ def main(argv=None) -> int:
     # into the right place.
     from .paths import get_root
     from .shim_log import log, error
+    from . import __version__
     deck_root = get_root()
-    log("runner", f"loading {app_path.name} on screen {ns.screen}")
+    log("runner", f"pdeck_sim {__version__} — loading {app_path.name} on screen {ns.screen}")
     log("runner", f"deck filesystem root: {deck_root}")
     try:
         user_module = _load_user_module(app_path)
