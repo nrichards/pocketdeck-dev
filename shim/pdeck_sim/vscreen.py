@@ -18,6 +18,7 @@ import pygame
 from .framebuffer import Framebuffer, SCREEN_W, SCREEN_H, get_framebuffer
 from .fonts import FontRegistry
 from .xbm_render import blit_xbm
+from .dither import apply_polygon_dither, apply_disc_dither, apply_box_dither
 
 
 class Vscreen:
@@ -160,10 +161,11 @@ class Vscreen:
         self.draw_line(x, y, x, y + h - 1)
 
     def draw_box(self, x: int, y: int, w: int, h: int) -> None:
-        pygame.draw.rect(
-            self._buf(), self._draw_color_value(),
-            pygame.Rect(int(x), int(y), int(w), int(h)),
-        )
+        # Use the dithered fill so set_dither() actually has visible effect.
+        # For dither >= 16 (solid), apply_box_dither falls through to the
+        # fast pygame.draw.rect path; no perf cost vs the previous behavior.
+        apply_box_dither(self._buf(), int(x), int(y), int(w), int(h),
+                         self._draw_color_value(), self._dither)
         self._mark()
 
     def draw_frame(self, x: int, y: int, w: int, h: int) -> None:
@@ -198,15 +200,14 @@ class Vscreen:
         self._mark()
 
     def draw_disc(self, x: int, y: int, rad: int, opt: int = 0) -> None:
-        pygame.draw.circle(
-            self._buf(), self._draw_color_value(),
-            (int(x), int(y)), int(rad),
-        )
+        apply_disc_dither(self._buf(), int(x), int(y), int(rad),
+                          self._draw_color_value(), self._dither)
         self._mark()
 
     def draw_triangle(self, x0, y0, x1, y1, x2, y2) -> None:
         pts = [(int(x0), int(y0)), (int(x1), int(y1)), (int(x2), int(y2))]
-        pygame.draw.polygon(self._buf(), self._draw_color_value(), pts)
+        apply_polygon_dither(self._buf(), pts,
+                             self._draw_color_value(), self._dither)
         self._mark()
 
     def draw_arc(self, x: int, y: int, rad: int, start, end) -> None:
@@ -233,10 +234,8 @@ class Vscreen:
         pts = list(points_array)
         n = len(pts) // 2
         xs, ys = pts[:n], pts[n:]
-        pygame.draw.polygon(
-            self._buf(), self._draw_color_value(),
-            list(zip(xs, ys)),
-        )
+        apply_polygon_dither(self._buf(), list(zip(xs, ys)),
+                             self._draw_color_value(), self._dither)
         self._mark()
 
     # -----------------------------------------------------------------------
@@ -312,9 +311,14 @@ class Vscreen:
         self._draw_color = int(color) & 0x03
 
     def set_dither(self, level: int) -> None:
+        """Set the dither level for filled shape draws (0..16).
+
+        Affects draw_box, draw_disc, draw_triangle, draw_polygon. Solid
+        shapes (level=16) and empty (level=0) use fast paths; intermediate
+        levels apply a 4x4 ordered Bayer pattern (pdeck_sim.dither).
+        Other draw calls (lines, frames, text, XBM) are unaffected.
+        """
         self._dither = max(0, min(16, int(level)))
-        # Note: true dithering would modulate draw ops by `level/16`. Not
-        # implemented here; apps using it for splash effects will look off.
 
     # -----------------------------------------------------------------------
     # Buffers

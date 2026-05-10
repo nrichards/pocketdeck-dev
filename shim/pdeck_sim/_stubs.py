@@ -3,6 +3,26 @@
 We inject each of these into sys.modules under its real name. None of them
 do anything interesting on desktop, but making them importable keeps user
 apps running without code changes.
+
+Conventions used (pinned for future reference and debugging):
+
+  Coordinate system: right-handed
+  Camera: at origin, looking down +Z (a vertex with tz > 0 is in
+    front of the camera)
+  Pinhole projection: x_screen = cx + tx*fov/tz, y_screen = cy - ty*fov/tz
+    (the y inversion is because screen-Y grows downward but
+    world-Y grows upward)
+  Transform composition: M = T · R · S where R = Rz · Ry · Rx
+    Applied to vertex v: T·R·S·v means scale first, then rotate,
+    then translate. Translation is independent of scale, satisfying
+    the doc's note "Translation is independent of model scale".
+  Backface culling: a face is culled when its transformed normal's
+    Z component >= 0. This matches cube_test.py's convention where
+    face normals are negated at construction so that the inward-
+    pointing normal of the camera-facing face has Z < 0 after
+    rotation.
+  Near plane: faces with any vertex at tz < 1.0 are culled. This
+    avoids divide-by-zero and behind-camera artifacts.
 """
 from __future__ import annotations
 
@@ -13,7 +33,7 @@ import time
 import types
 import warnings
 from pathlib import Path
-
+import math
 
 # ---------------------------------------------------------------------------
 # pdeck_utils
@@ -785,24 +805,19 @@ def make_re_test() -> types.ModuleType:
 # audio examples without the audio engine.
 # ---------------------------------------------------------------------------
 
-def make_dsplib() -> types.ModuleType:
-    """Stub for the deck's `dsplib` C native module.
-
-    Provides math-correct matrix_mul_f32 and matrix_mul_s16 so dither_test
-    and zen_chamber rotate their geometry as intended. The 3D-projection
-    functions are no-ops — apps using the indexed 3D pipeline will run
-    but render nothing.
-    """
+def make_dsplib():
+    """Replacement factory. Construct as you would the original
+    `make_dsplib()` from _stubs.py. Returns a types.ModuleType ready
+    for sys.modules registration."""
+    import types
+    import array
     mod = types.ModuleType("dsplib")
 
-    def matrix_mul_f32(A, B, m, n, k, C=None):
-        """Multiply A (m x n floats) by B (n x k floats), result m x k floats.
+    # ------------------------------------------------------------------
+    # matrix_mul_f32, matrix_mul_s16: unchanged from the existing stub
+    # ------------------------------------------------------------------
 
-        On the deck this is a viper-optimized C function. Pure Python here.
-        If C is None, allocate and return a new array. If C is provided,
-        write into it.
-        """
-        import array
+    def matrix_mul_f32(A, B, m, n, k, C=None):
         if C is None:
             C = array.array('f', [0.0] * (m * k))
         for i in range(m):
@@ -814,65 +829,316 @@ def make_dsplib() -> types.ModuleType:
         return C
 
     def matrix_mul_s16(A, B, m, n, k, shift, C):
-        """Fixed-point 16-bit matrix multiply with right-shift after sum.
-
-        A is (m x n) signed int16; B is (n x k) signed int16; C is (m x k).
-        After accumulating the int32 sum, shift right by `shift` bits to
-        produce a fixed-point result. This is what the deck's int16 path
-        does for fast rotation in dither_test.
-        """
         for i in range(m):
             for j in range(k):
                 s = 0
                 for x in range(n):
                     s += int(A[i * n + x]) * int(B[x * k + j])
-                # Arithmetic shift, clamp to int16 range
                 s = s >> shift
                 if s > 32767: s = 32767
                 elif s < -32768: s = -32768
                 C[i * k + j] = s
         return C
 
+    # ------------------------------------------------------------------
+    # set_transform_matrix_4x4 — real implementation
+    # ------------------------------------------------------------------
+
     def set_transform_matrix_4x4(matrix, rotation, position, scale):
-        """Build a 4x4 transform from rotation/position/scale. No-op stub
-        — fills the matrix with identity, which means apps using it for
-        3D rendering will see un-rotated, un-translated output. Visuals
-        will be wrong but the app won't crash."""
-        # Identity 4x4 in row-major order
-        identity = [1.0, 0.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0, 0.0,
-                    0.0, 0.0, 1.0, 0.0,
-                    0.0, 0.0, 0.0, 1.0]
-        for i in range(min(16, len(matrix))):
-            matrix[i] = identity[i]
+        """Build M = T · (R · S) row-major in the 16-float buffer.
+
+        rotation: [rx, ry, rz] Euler radians, applied as R = Rz·Ry·Rx.
+        position: [tx, ty, tz] world translation, INDEPENDENT of scale.
+        scale: [sx, sy, sz] component-wise scale.
+
+        The resulting matrix transforms a vertex v as: T·R·S·v
+        i.e., scale first, then rotate, then translate. The translation
+        column receives `position` directly (not scale*position), so
+        translation is indeed independent of scale per the doc.
+
+        Row-major layout in the matrix buffer:
+            [m00 m01 m02 m03]
+            [m04 m05 m06 m07]
+            [m08 m09 m10 m11]
+            [m12 m13 m14 m15]
+        where the last column (m03, m07, m11) is translation and the
+        upper-left 3x3 block is the combined rotation*scale.
+        """
+        rx, ry, rz = float(rotation[0]), float(rotation[1]), float(rotation[2])
+        tx, ty, tz = float(position[0]), float(position[1]), float(position[2])
+        sx, sy, sz = float(scale[0]), float(scale[1]), float(scale[2])
+
+        cx, sxr = math.cos(rx), math.sin(rx)
+        cy, syr = math.cos(ry), math.sin(ry)
+        cz, szr = math.cos(rz), math.sin(rz)
+
+        # R = Rz · Ry · Rx, row-major. Compose from canonical Euler form.
+        # Reference: standard XYZ Euler decomposition. Verified against
+        # a 90° rotation about Y mapping (1,0,0) to (0,0,-1).
+        r00 = cz * cy
+        r01 = cz * syr * sxr - szr * cx
+        r02 = cz * syr * cx + szr * sxr
+        r10 = szr * cy
+        r11 = szr * syr * sxr + cz * cx
+        r12 = szr * syr * cx - cz * sxr
+        r20 = -syr
+        r21 = cy * sxr
+        r22 = cy * cx
+
+        # Combine R * S (scale is applied before rotation in the math,
+        # so each column of R gets multiplied by the corresponding scale)
+        matrix[0]  = r00 * sx
+        matrix[1]  = r01 * sy
+        matrix[2]  = r02 * sz
+        matrix[3]  = tx
+        matrix[4]  = r10 * sx
+        matrix[5]  = r11 * sy
+        matrix[6]  = r12 * sz
+        matrix[7]  = ty
+        matrix[8]  = r20 * sx
+        matrix[9]  = r21 * sy
+        matrix[10] = r22 * sz
+        matrix[11] = tz
+        matrix[12] = 0.0
+        matrix[13] = 0.0
+        matrix[14] = 0.0
+        matrix[15] = 1.0
+
+    # ------------------------------------------------------------------
+    # set_transform_matrix_3x3 — 2D analog
+    # ------------------------------------------------------------------
 
     def set_transform_matrix_3x3(matrix, rotation, position, scale):
-        """3x3 2D transform stub. Fills with identity."""
-        identity = [1.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0,
-                    0.0, 0.0, 1.0]
-        for i in range(min(9, len(matrix))):
-            matrix[i] = identity[i]
+        """Build a 2D transform M = T · R · S as 3x3 row-major.
 
-    def project_3d_indexed(*a, **kw):
-        """3D projection — stub. The output buffers are not populated,
-        so the deck's `draw_3d_faces(points, indices, dither)` will draw
-        whatever happened to be in the buffer at allocation time."""
-        # In a future round we could implement this against the actual
-        # geometry math, but it's a substantial effort and only matters
-        # for cube/sphere/etc tests.
-        return None
+        rotation: scalar float (radians), single rotation about Z.
+        position: [tx, ty]
+        scale: [sx, sy]
 
-    def project_2d_indexed(*a, **kw):
-        return None
+        Result: 3x3 matrix in homogeneous 2D coords. Vertex (x, y)
+        becomes (x', y') by:
+            x' = m00*x + m01*y + m02
+            y' = m10*x + m11*y + m12
+        m20..m22 is the unused homogeneous row [0, 0, 1].
+        """
+        # rotation is scalar, not array, per the doc
+        theta = float(rotation)
+        c = math.cos(theta)
+        s = math.sin(theta)
+        sx, sy = float(scale[0]), float(scale[1])
+        tx, ty = float(position[0]), float(position[1])
+
+        matrix[0] = c * sx
+        matrix[1] = -s * sy
+        matrix[2] = tx
+        matrix[3] = s * sx
+        matrix[4] = c * sy
+        matrix[5] = ty
+        matrix[6] = 0.0
+        matrix[7] = 0.0
+        matrix[8] = 1.0
+
+    # ------------------------------------------------------------------
+    # project_3d_indexed — the heart of this work
+    # ------------------------------------------------------------------
+
+    NEAR_PLANE = 1.0  # vertices with tz < this are clipped
+
+    def project_3d_indexed(matrix, verts, indices, normals, light,
+                           num_faces, num_verts, fov, cx, cy,
+                           out_poly, out_dither, out_depths,
+                           temp_verts, temp_norms):
+        """Project 3D indexed geometry to screen-space triangles + dither.
+
+        Pipeline:
+          1. Transform every unique vertex once into temp_verts (3 floats
+             per vertex, world space after matrix). Reuses verts so we
+             don't pay matrix-multiply cost per face.
+          2. Transform each face normal by the rotation+scale 3x3 block
+             of the matrix (no translation) into temp_norms.
+          3. For each face:
+             - Compute centroid Z; write (Z * 1024) into out_depths[i].
+             - Backface cull: if transformed normal.z >= 0, dither = -1.
+             - Near-plane cull: if any vertex has tz < NEAR_PLANE,
+               dither = -1.
+             - Otherwise compute Lambert-style dot(normal, light), map to
+               0..16 dither.
+             - Project each of the 3 verts to screen and write
+               [x1, x2, x3, y1, y2, y3] into out_poly[i*6 : i*6+6].
+        """
+        # Read matrix entries once into locals for speed
+        m00, m01, m02, m03 = matrix[0], matrix[1], matrix[2], matrix[3]
+        m10, m11, m12, m13 = matrix[4], matrix[5], matrix[6], matrix[7]
+        m20, m21, m22, m23 = matrix[8], matrix[9], matrix[10], matrix[11]
+
+        # Transform unique vertices into temp_verts
+        for vi in range(num_verts):
+            base = vi * 3
+            x = verts[base]
+            y = verts[base + 1]
+            z = verts[base + 2]
+            temp_verts[base]     = m00 * x + m01 * y + m02 * z + m03
+            temp_verts[base + 1] = m10 * x + m11 * y + m12 * z + m13
+            temp_verts[base + 2] = m20 * x + m21 * y + m22 * z + m23
+
+        # Transform face normals by the upper-left 3x3 (rotation * scale,
+        # NO translation). Note: this is not strictly the inverse-transpose
+        # required for non-uniform scale, but the deck uses the same
+        # simplified approach and the examples use uniform scale anyway.
+        for fi in range(num_faces):
+            base = fi * 3
+            nx = normals[base]
+            ny = normals[base + 1]
+            nz = normals[base + 2]
+            temp_norms[base]     = m00 * nx + m01 * ny + m02 * nz
+            temp_norms[base + 1] = m10 * nx + m11 * ny + m12 * nz
+            temp_norms[base + 2] = m20 * nx + m21 * ny + m22 * nz
+
+        # Per-face: cull, depth, dither, project
+        lx, ly, lz = float(light[0]), float(light[1]), float(light[2])
+        # Normalize the light direction once (apps may pass un-normalized)
+        l_len = math.sqrt(lx * lx + ly * ly + lz * lz)
+        if l_len > 1e-9:
+            lx /= l_len; ly /= l_len; lz /= l_len
+
+        for fi in range(num_faces):
+            i0 = indices[fi * 3]
+            i1 = indices[fi * 3 + 1]
+            i2 = indices[fi * 3 + 2]
+
+            t0x = temp_verts[i0 * 3]
+            t0y = temp_verts[i0 * 3 + 1]
+            t0z = temp_verts[i0 * 3 + 2]
+            t1x = temp_verts[i1 * 3]
+            t1y = temp_verts[i1 * 3 + 1]
+            t1z = temp_verts[i1 * 3 + 2]
+            t2x = temp_verts[i2 * 3]
+            t2y = temp_verts[i2 * 3 + 1]
+            t2z = temp_verts[i2 * 3 + 2]
+
+            # Centroid Z for sorting (scaled by 1024 per the doc)
+            cz_face = (t0z + t1z + t2z) / 3.0
+            out_depths[fi] = int(cz_face * 1024.0)
+
+            # Near-plane cull: any vertex behind or near camera → drop
+            if t0z < NEAR_PLANE or t1z < NEAR_PLANE or t2z < NEAR_PLANE:
+                out_dither[fi] = -1
+                continue
+
+            # Backface cull: transformed normal.z >= 0 means face points
+            # away from camera (cube_test convention with negated normals).
+            tnz = temp_norms[fi * 3 + 2]
+            if tnz >= 0.0:
+                out_dither[fi] = -1
+                continue
+
+            # Lambertian shading: dot(normal, light), normalized normal
+            tnx = temp_norms[fi * 3]
+            tny = temp_norms[fi * 3 + 1]
+            n_len = math.sqrt(tnx * tnx + tny * tny + tnz * tnz)
+            if n_len < 1e-9:
+                out_dither[fi] = 0
+            else:
+                # Standard Lambert: dot(unit_normal, unit_light).
+                # cube_test stores INWARD normals (negated outward
+                # normals from the cross product). Light is a direction
+                # vector. With cube_test's light = [0.5, 0.7, -1.0] and
+                # the front face's stored normal = (0, 0, -1), the dot
+                # product is +1.0, which we want to map to bright (16).
+                # So bright = positive dot, dim = negative dot.
+                d = (tnx * lx + tny * ly + tnz * lz) / n_len
+                # Map [-1, 1] to [0, 16]. d = 1.0 (full lit) → 16,
+                # d = -1.0 (back lit) → 0.
+                level = int((d + 1.0) * 8.0)
+                if level < 0: level = 0
+                elif level > 16: level = 16
+                out_dither[fi] = level
+
+            # Project vertices to screen. Write as
+            # [x1, x2, x3, y1, y2, y3] per the contract.
+            inv0 = fov / t0z
+            inv1 = fov / t1z
+            inv2 = fov / t2z
+            sx1 = int(cx + t0x * inv0)
+            sy1 = int(cy - t0y * inv0)
+            sx2 = int(cx + t1x * inv1)
+            sy2 = int(cy - t1y * inv1)
+            sx3 = int(cx + t2x * inv2)
+            sy3 = int(cy - t2y * inv2)
+
+            base = fi * 6
+            out_poly[base]     = max(-32768, min(32767, sx1))
+            out_poly[base + 1] = max(-32768, min(32767, sx2))
+            out_poly[base + 2] = max(-32768, min(32767, sx3))
+            out_poly[base + 3] = max(-32768, min(32767, sy1))
+            out_poly[base + 4] = max(-32768, min(32767, sy2))
+            out_poly[base + 5] = max(-32768, min(32767, sy3))
+
+    # ------------------------------------------------------------------
+    # project_2d_indexed — 2D analog with vertex-color dither
+    # ------------------------------------------------------------------
+
+    def project_2d_indexed(matrix, verts, indices, colors, light_mult,
+                           num_faces, num_verts, cx, cy,
+                           out_poly, out_dither, temp_verts):
+        """Project 2D indexed geometry through a 3x3 matrix.
+
+        Different from 3D: no normals, no depth sort. Instead, each
+        VERTEX has a per-vertex dither value in `colors`, and we
+        average the three vertex colors for each face's dither.
+
+        light_mult is a scalar multiplier applied to all colors before
+        clamping.
+        """
+        m00, m01, m02 = matrix[0], matrix[1], matrix[2]
+        m10, m11, m12 = matrix[3], matrix[4], matrix[5]
+
+        # Transform unique 2D vertices
+        for vi in range(num_verts):
+            base = vi * 2
+            x = verts[base]
+            y = verts[base + 1]
+            temp_verts[base]     = m00 * x + m01 * y + m02
+            temp_verts[base + 1] = m10 * x + m11 * y + m12
+
+        for fi in range(num_faces):
+            i0 = indices[fi * 3]
+            i1 = indices[fi * 3 + 1]
+            i2 = indices[fi * 3 + 2]
+
+            # Average vertex colors, apply light multiplier
+            c0 = colors[i0]
+            c1 = colors[i1]
+            c2 = colors[i2]
+            avg = (c0 + c1 + c2) / 3.0 * light_mult
+            level = int(avg)
+            if level < 0: level = 0
+            elif level > 16: level = 16
+            out_dither[fi] = level
+
+            sx1 = int(cx + temp_verts[i0 * 2])
+            sy1 = int(cy - temp_verts[i0 * 2 + 1])
+            sx2 = int(cx + temp_verts[i1 * 2])
+            sy2 = int(cy - temp_verts[i1 * 2 + 1])
+            sx3 = int(cx + temp_verts[i2 * 2])
+            sy3 = int(cy - temp_verts[i2 * 2 + 1])
+
+            base = fi * 6
+            out_poly[base]     = max(-32768, min(32767, sx1))
+            out_poly[base + 1] = max(-32768, min(32767, sx2))
+            out_poly[base + 2] = max(-32768, min(32767, sx3))
+            out_poly[base + 3] = max(-32768, min(32767, sy1))
+            out_poly[base + 4] = max(-32768, min(32767, sy2))
+            out_poly[base + 5] = max(-32768, min(32767, sy3))
+
+    # ------------------------------------------------------------------
+    # sort_indices — unchanged
+    # ------------------------------------------------------------------
 
     def sort_indices(indices, depths, start_id=None):
-        """Sort indices by depth descending. Useful enough that we
-        implement it correctly — small data, no perf concern."""
         if start_id is not None:
             for i in range(len(indices)):
                 indices[i] = start_id + i
-        # Pair, sort by depth desc, write back
         n = min(len(indices), len(depths))
         pairs = sorted(
             ((int(indices[i]), int(depths[i])) for i in range(n)),
@@ -881,6 +1147,7 @@ def make_dsplib() -> types.ModuleType:
         for i, (idx, _) in enumerate(pairs):
             indices[i] = idx
 
+    # Wire up exports
     mod.matrix_mul_f32 = matrix_mul_f32
     mod.matrix_mul_s16 = matrix_mul_s16
     mod.set_transform_matrix_4x4 = set_transform_matrix_4x4

@@ -152,6 +152,23 @@ class Framebuffer:
         # number, etc. see clean values.
         from .debug_state import reset_debug_state
         reset_debug_state()
+        # Reset cached Vscreen instances' draw state so dither, draw color,
+        # font, etc. don't leak across tests. The Vscreen objects themselves
+        # are kept (recreating them would cost the test fixture overhead),
+        # but their drawing state is restored to defaults.
+        try:
+            from . import fake_pdeck
+            for v in fake_pdeck._vscreens.values():
+                v._draw_color = 1
+                v._font_mode = 0
+                v._bitmap_mode = 0
+                v._dither = 16
+                v._drew_this_frame = False
+                v._callback = None
+        except (ImportError, AttributeError):
+            # During very early init, fake_pdeck may not be importable.
+            # That's fine — there are no cached vscreens to clear yet.
+            pass
 
     # --- presentation ---
 
