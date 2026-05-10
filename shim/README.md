@@ -2,6 +2,8 @@
 
 A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop limited Pocket Deck apps on your Mac; a pygame window stands in for the 400×240 monochrome LCD. Headless tests are included.
 
+## [Changelog](CHANGELOG.md)
+
 ## What's covered
 
 - `pdeck` module: `vscreen()`, `get_screen_size()`, `clipboard_copy/paste`,
