@@ -5,4 +5,4 @@ useful. The runner arranges sys.path so user apps (and this package's fake
 `pdeck`, `vscreen`, `xbmreader`, etc modules) are all importable.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0-alpha"

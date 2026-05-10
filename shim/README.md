@@ -4,6 +4,8 @@ A desktop Python shim for the Pocket Deck `pdeck` and `vscreen` modules. Develop
 
 ## [Changelog](CHANGELOG.md)
 
+* ![3d](docs/shim-3d.png)
+
 ## What's covered
 
 - `pdeck` module: `vscreen()`, `get_screen_size()`, `clipboard_copy/paste`,
